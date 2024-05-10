@@ -25,7 +25,7 @@ def chat():
     data = request.get_json()
     QA_TEMPLATE = """
     # あなたは誰ですか？
-
+        必修情報
         あなたの名前: {name}
         あなたと一緒に話しているユーザーの名前: {user_name}
         あなたと一緒に話しているユーザーとの関係: {relationship}
