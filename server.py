@@ -25,6 +25,7 @@ def chat():
     data = request.get_json()
     QA_TEMPLATE = """
     # あなたは誰ですか？
+
         必修情報
         あなたの名前: {name}
         あなたと一緒に話しているユーザーの名前: {user_name}
@@ -274,4 +275,4 @@ def chat():
     return answer.content
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=True)
