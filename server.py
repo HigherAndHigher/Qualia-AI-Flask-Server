@@ -155,7 +155,7 @@ def chat():
     ])
     chain_qa = prompt_qa | ai_model
 
-    print("this is history------------------->", chat_history)
+    print("this is history: ", chat_history)
     answer = chain_qa.invoke({
         "chat_history": chat_history,
         "question": data.get('input'),
