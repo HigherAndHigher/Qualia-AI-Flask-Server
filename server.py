@@ -1,4 +1,5 @@
 import os
+import pathlib
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -11,6 +12,7 @@ from langchain_core.retrievers import BaseRetriever, Document
 from langchain.chains.question_answering import load_qa_chain
 from typing import List
 from langchain.docstore.document import Document
+
 load_dotenv()
 
 app = Flask(__name__)
