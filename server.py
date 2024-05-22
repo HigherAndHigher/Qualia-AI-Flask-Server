@@ -64,7 +64,7 @@ def chat():
         あなたの好きな言葉: 「{favorite_word}」
         あなたの好きな季節: {favorite_season}
         あなたが旅行で行った場所で一番好きな所: {favorite_travel_destination}
-        あなたは一人旅と団体旅行のなかでどちら?:{solo_travel_or_group_travel}
+        あなたは一人旅と団体旅行の中でどちら?:{solo_travel_or_group_travel}
         あなたの好き／苦手な食べ物、飲み物: {favorite_and_disliked_foods_and_drinks}
         あなたは辛い食べ物が好き？ 甘い食べ物が好き？: {spicy_or_sweet_food_preference}
         あなたは料理作る？得意料理は？: {cooking_skills_and_signature_dishes}
