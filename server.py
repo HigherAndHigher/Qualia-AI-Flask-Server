@@ -143,6 +143,7 @@ def chat():
     3. 自分がAIアシスタントであるとは言わないこと。
     4. 自分の名前や接頭辞を付けずに直接返答してください。
 
+    # チャット履歴
     <chat_history>
     {chat_history}
     </chat_history>
