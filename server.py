@@ -1,16 +1,18 @@
 import os
+import json
+import pinecone
+import hashlib
+import spacy
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import Pinecone
 from langchain_core.prompts import ChatPromptTemplate
+from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain_openai import ChatOpenAI
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
-from langchain_core.retrievers import BaseRetriever, Document
-from langchain.chains.question_answering import load_qa_chain
-from typing import List
-from langchain.docstore.document import Document
+
+
 
 load_dotenv()
 
@@ -18,9 +20,35 @@ app = Flask(__name__)
 CORS(app)
 load_dotenv()
 api_key = os.getenv("OPENAI_API_KEY")
+pinecone_api_key = os.getenv("PINECONE_API_KEY")
+pinecone_environment = "gcp-starter"
+index_name = "dst111-chatbot-test"
+model_name = "text-embedding-ada-002"
 ai_model = ChatOpenAI(model="gpt-3.5-turbo", openai_api_key=api_key, temperature=0)
 
 chat_history = []
+
+embed = OpenAIEmbeddings(
+    model = model_name,
+    openai_api_key = api_key
+)
+
+pc = Pinecone(
+    api_key = pinecone_api_key
+)
+
+llm = ChatOpenAI(
+    openai_api_key = api_key,
+    model_name = "gpt-3.5-turbo",
+    temperature = 0.0
+)
+
+conversational_memory = ConversationBufferWindowMemory(
+    memory_key = "chat_history",
+    k = 5,
+    return_messages = True
+)
+
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.get_json()
@@ -108,7 +136,7 @@ def chat():
         あなたが嬉しい時の仕草や特徴: {happiness_traits}
         あなたの笑い方の仕草や特徴: {laughing_style}
         あなたの泣き方の仕草や特徴: {crying_style}
-        あなたは冗談をよく言う方かと割合は{joke_telling_frequency}
+        あなたは冗談をよく言う方かと割合は: {joke_telling_frequency}
         あなたは抽象的な表現が好き？それはどんな表現？: {abstract_expression_preference}
         あなたの座右の銘: {personal_motto}
         あなたの人生で一番古い記憶: {earliest_memory}
@@ -276,5 +304,30 @@ def chat():
     chat_history.append({"AI_Model": answer.content})
     return answer.content
 
+@app.route('/add_profile', methods=['POST'])
+def add_profiles():
+    create_index(index_name)
+    index = pc.GRPCIndex(index_name)
+    profile_data = request.json
+    
+    #
+    for profile in profile_data:
+        documents = [json.dumps(profile)]
+        embeds = embed.embed_documents(documents)
+        ids = [profile['id']]
+
+        index.upsert(vectors=zip(ids, embeds))
+
+
+    return "Indexed Successfully"
+
+def create_index(index_name):
+    if index_name not in pinecone.list_indexes():
+        pc.create_index(
+            name = index_name,
+            metric = "dotproduct",
+            dimension = 1536
+        )
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000)
