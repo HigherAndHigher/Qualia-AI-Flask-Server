@@ -2,7 +2,7 @@ import os
 import time
 import json
 import time
-import pinecone
+import base64
 from pinecone import Pinecone, ServerlessSpec, PodSpec  
 #from langchain.vectorstores import Pinecone as PineconeVectorStore
 from langchain_pinecone import PineconeVectorStore 
@@ -107,7 +107,10 @@ def create_chat():
     user_id = profile_data['user_id']
     chat_name = profile_data['model_name']
     avatar_url = profile_data['avatar_url']
-    
+
+    hash_chat_name = base64.b64encode(chat_name.encode('utf-8'))
+    hash_chat_name = hash_chat_name.decode('ascii')
+
     try:
         info = db.collection('chat_models').where(filter=FieldFilter('user_id', '==', user_id)).where(filter=FieldFilter('chat_name', '==', chat_name))
         print(len(info.get()))
@@ -130,7 +133,7 @@ def create_chat():
 
             texts = [texts]
             index_name = user_id
-            namespace_name = user_id + "-" + chat_name
+            namespace_name = user_id + "-" + hash_chat_name
             #index_name = hashing.hash_value(origin_index_name, salt='secret')
 
             if index_name not in pc.list_indexes().names():
@@ -163,7 +166,10 @@ def delete_chat():
     chat_name = data['model_name']
     user_id = data['user_id']
 
-    namespace_name = user_id + '-' + chat_name
+    hash_chat_name = base64.b64encode(chat_name.encode('utf-8'))
+    hash_chat_name = hash_chat_name.decode('ascii')
+
+    namespace_name = user_id + '-' + hash_chat_name
 
     try:
         if user_id in pc.list_indexes().names():
@@ -191,7 +197,11 @@ def conversion_agent():
     #query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
 
     chat_name = request.json['chat_name']
-    namespace = user_id + "-" + chat_name
+
+    hash_chat_name = base64.b64encode(chat_name.encode('utf-8'))
+    hash_chat_name = hash_chat_name.decode('ascii')
+
+    namespace = user_id + "-" + hash_chat_name
 
     vectorStore = PineconeVectorStore(index_name=user_id, embedding=embeddings, namespace=namespace)
     print(namespace, query)
