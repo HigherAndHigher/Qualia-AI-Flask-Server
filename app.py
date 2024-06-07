@@ -106,6 +106,7 @@ def create_chat():
     profile_data = request.json
     user_id = profile_data['user_id']
     chat_name = profile_data['model_name']
+    avatar_url = profile_data['avatar_url']
     
     try:
         info = db.collection('chat_models').where(filter=FieldFilter('user_id', '==', user_id)).where(filter=FieldFilter('chat_name', '==', chat_name))
@@ -140,7 +141,8 @@ def create_chat():
                 "user_id": user_id,
                 "chat_name": chat_name,
                 "index_name": index_name,
-                "namespace_name": namespace_name
+                "namespace_name": namespace_name,
+                "avatar_url": avatar_url
             })
 
     except Exception as e:
@@ -155,6 +157,29 @@ def create_chat():
         "namespace_name": namespace_name
     }
 
+@app.route('/delete', methods=['POST'])
+def delete_chat():
+    data = request.json
+    chat_name = data['model_name']
+    user_id = data['user_id']
+
+    namespace_name = user_id + '-' + chat_name
+
+    try:
+        if user_id in pc.list_indexes().names():
+            index = pc.Index(user_id)
+            index.delete(
+                delete_all=True,
+                namespace=namespace_name ,
+            )
+            return "success"
+            
+        else:    
+            return "failed"
+    except Exception as e:
+        print(e)
+        return "failed"
+
 @app.route('/chat', methods=['POST'])
 def conversion_agent():
     print(request.json)
@@ -163,7 +188,7 @@ def conversion_agent():
     relationship = request.json['relationship']
     visit_purpose = request.json['visit_purpose']
     query = request.json['query']
-    query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
+    #query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
 
     chat_name = request.json['chat_name']
     namespace = user_id + "-" + chat_name
@@ -171,46 +196,46 @@ def conversion_agent():
     vectorStore = PineconeVectorStore(index_name=user_id, embedding=embeddings, namespace=namespace)
     print(namespace, query)
 
-    retriever = vectorStore.as_retriever()
+    # retriever = vectorStore.as_retriever()
     
-    print(memory.buffer)
-    chain = ConversationalRetrievalChain.from_llm(llm, retriever= retriever, memory= conversational_memory)
+    # print(memory.buffer)
+    # chain = ConversationalRetrievalChain.from_llm(llm, retriever= retriever, memory= conversational_memory)
 
-    res = chain.run({'question': query})
+    # res = chain.run({'question': query})
 
-    # qa = RetrievalQA.from_chain_type(
-    #     llm=llm,
-    #     chain_type="stuff",
-    #     retriever=vectorStore.as_retriever()
-    # )
+    qa = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorStore.as_retriever()
+    )
 
-    # tools = [
-    #     Tool(
-    #         name='Knowledge Base',
-    #         func=qa.run,
-    #         description=(
-    #             '名前、誕生日、出身地、職業、趣味、職業などの個人情報を回答する際に、このツールを使用すると、トピックに関する詳細な情報を得ることができます。'
-    #             ' 訪問者名は' + user_name +' '
-    #             ' ビジターの目的は' + visit_purpose + ' '
-    #             ' あなたと訪問者の関係を' + relationship + ' '
-    #             " 質問に対する回答"
-    #             ' 正しい答えが見つからなくても、常に日本語で答えること。' 
-    #         )
-    #     )
-    # ]
+    tools = [
+        Tool(
+            name='Knowledge Base',
+            func=qa.run,
+            description=(
+                '名前、誕生日、出身地、職業、趣味、職業などの個人情報を回答する際に、このツールを使用すると、トピックに関する詳細な情報を得ることができます。'
+                ' 訪問者名は' + user_name +' '
+                ' ビジターの目的は' + visit_purpose + ' '
+                ' あなたと訪問者の関係を' + relationship + ' '
+                " 質問に対する回答"
+                ' 正しい答えが見つからなくても、常に日本語で答えること。' 
+            )
+        )
+    ]
 
-    # agent = initialize_agent(
-    #     agent='chat-conversational-react-description',
-    #     tools=tools,
-    #     llm=llm,
-    #     verbose=True,
-    #     max_iterations=3,
-    #     early_stopping_method='generate',
-    #     memory=conversational_memory,
-    # )
+    agent = initialize_agent(
+        agent='chat-conversational-react-description',
+        tools=tools,
+        llm=llm,
+        verbose=True,
+        max_iterations=3,
+        early_stopping_method='generate',
+        memory=conversational_memory
+    )
 
-    # answer = agent(query)
-    return res
+    answer = agent(query)
+    return answer['output']
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
