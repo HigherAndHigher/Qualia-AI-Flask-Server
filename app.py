@@ -60,7 +60,7 @@ system_message = """
     1. ユーザーの訪問目的とあなたとの関係に基づいて、正しく表現すること。
     2. 前の会話を続けながら、自然に説明すること。
     3. 自分がAIアシスタントであるとは言わないこと。
-    4. 回答は訪問者の名前から始めるべきである。
+    4. クエリで訪問者の名前、訪問目的、訪問者と会員の関係を確認することができ、その情報を確認し、それに応じて会話する必要があります。
     5. 正しい答えが見つからなくても、常に日本語で答えなさい」
 """
 
@@ -163,8 +163,7 @@ def conversion_agent():
     relationship = request.json['relationship']
     visit_purpose = request.json['visit_purpose']
     query = request.json['query']
-    #query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". 訪問者の名前がクエリにある. 回答は訪問者の名前から始めるべきである。"+ ". 日本語で答えなければならない。"
-    query += " いつも日本語で答える"
+    query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
 
     chat_name = request.json['chat_name']
     namespace = user_id + "-" + chat_name
@@ -172,47 +171,46 @@ def conversion_agent():
     vectorStore = PineconeVectorStore(index_name=user_id, embedding=embeddings, namespace=namespace)
     print(namespace, query)
 
-    # retriever = vectorStore.as_retriever()
+    retriever = vectorStore.as_retriever()
     
-    # print(memory.buffer)
-    # chain = ConversationalRetrievalChain.from_llm(llm, retriever= retriever, memory= conversational_memory)
+    print(memory.buffer)
+    chain = ConversationalRetrievalChain.from_llm(llm, retriever= retriever, memory= conversational_memory)
 
-    # res = chain.run({'question': query, })
-    # print("result >>>>>>>", res)
+    res = chain.run({'question': query})
 
-    qa = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=vectorStore.as_retriever()
-    )
+    # qa = RetrievalQA.from_chain_type(
+    #     llm=llm,
+    #     chain_type="stuff",
+    #     retriever=vectorStore.as_retriever()
+    # )
 
-    tools = [
-        Tool(
-            name='Knowledge Base',
-            func=qa.run,
-            description=(
-                'use this tool when answering about your personal information such as name, birthday, birthplace, work experience, job and so on to get more information about the topic'
-                ' visitor name is' + user_name +' '
-                ' visit purpose of visior is' + visit_purpose + ' '
-                ' assume relationship between you and visitor as' + relationship + ' '
-                " answer about visitor's question"
-                ' always answer with japanese even though you have not foound the correct answer' 
-            )
-        )
-    ]
+    # tools = [
+    #     Tool(
+    #         name='Knowledge Base',
+    #         func=qa.run,
+    #         description=(
+    #             '名前、誕生日、出身地、職業、趣味、職業などの個人情報を回答する際に、このツールを使用すると、トピックに関する詳細な情報を得ることができます。'
+    #             ' 訪問者名は' + user_name +' '
+    #             ' ビジターの目的は' + visit_purpose + ' '
+    #             ' あなたと訪問者の関係を' + relationship + ' '
+    #             " 質問に対する回答"
+    #             ' 正しい答えが見つからなくても、常に日本語で答えること。' 
+    #         )
+    #     )
+    # ]
 
-    agent = initialize_agent(
-        agent='chat-conversational-react-description',
-        tools=tools,
-        llm=llm,
-        verbose=True,
-        max_iterations=3,
-        early_stopping_method='generate',
-        memory=conversational_memory,
-    )
+    # agent = initialize_agent(
+    #     agent='chat-conversational-react-description',
+    #     tools=tools,
+    #     llm=llm,
+    #     verbose=True,
+    #     max_iterations=3,
+    #     early_stopping_method='generate',
+    #     memory=conversational_memory,
+    # )
 
-    answer = agent(query)
-    return answer['output']
+    # answer = agent(query)
+    return res
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
