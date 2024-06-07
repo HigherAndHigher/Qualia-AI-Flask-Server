@@ -20,7 +20,6 @@ from langchain.chains import ConversationalRetrievalChain
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
-from flask_hashing import Hashing
 
 app = Flask(__name__)
 CORS(app)
