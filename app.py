@@ -1,16 +1,21 @@
 import os
 import time
 import json
+import time
 import base64
 from pinecone import Pinecone, ServerlessSpec, PodSpec  
-from langchain.vectorstores import Pinecone as PineconeVectorStore 
+#from langchain.vectorstores import Pinecone as PineconeVectorStore
+from langchain_pinecone import PineconeVectorStore 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.chat_models import ChatOpenAI
+from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain.chains import RetrievalQA
-from langchain.agents import Tool, initialize_agent
-from langchain.memory import ConversationBufferWindowMemory
+from langchain.agents import Tool
+from langchain.agents import initialize_agent
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationalRetrievalChain
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -19,18 +24,20 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 app = Flask(__name__)
 CORS(app)
 
-# Configure FireStore
+#Configure FireStore
 cred = credentials.Certificate('./key.json')
 firebase_admin.initialize_app(cred)
+
 db = firestore.client()
 
-# Environment variables
+#env variables
 pinecone_api_key = os.environ.get('PINECONE_API_KEY')
 openai_api_key = os.environ.get('OPENAI_API_KEY')
 
-# Configure Pinecone and LangChain
+#configure pinecone and langchain
 use_serverless = True  
-model_name = 'text-embedding-ada-002'
+
+model_name = 'text-embedding-ada-002'  
 
 embeddings = OpenAIEmbeddings(  
     model=model_name,  
@@ -38,48 +45,46 @@ embeddings = OpenAIEmbeddings(
 )
 
 llm = ChatOpenAI(
-    openai_api_key=openai_api_key,
+    openai_api_key = os.environ['OPENAI_API_KEY'],
     model_name='gpt-3.5-turbo',
     temperature=0.0
 )
 
 system_message = """
-# タスク
-ユーザーの訪問目的に基づいて、ユーザーと自然なチャットを行ってください。
-クエリには訪問者の名前、訪問目的、訪問者との関係が含まれています。それを基に回答してください。
+    # タスク
+    あなたの仕事は、ユーザーの訪問目的に基づいてユーザーとチャットすることです。
+    訪問者の名前、訪問目的、あなたとの関係はクエリに含まれており、クエリから取得することができます。
+    あなたは、訪問目的とあなたとの関係に応じて答える必要があります。
 
-# ルール
-1. 訪問目的と訪問者との関係に基づいて、適切な表現を使って答えてください。
-2. 会話の流れを保ちながら、自然に説明してください。
-3. 自分がAIアシスタントであることを明かさないでください。
-4. クエリから訪問者の名前、訪問目的、訪問者との関係を確認し、それに応じて会話を続けてください。
-5. 正しい答えが見つからなくても、常に日本語で答えてください。
-
-# 例
-クエリ: 訪問者の名前は田中さん、目的は製品のデモを見ること、関係は既存の顧客です。
-応答: 田中さん、こんにちは！製品のデモについてお聞きになりたいのですね。どの製品に興味がありますか？
-
-クエリ: 訪問者の名前は鈴木さん、目的はサポート依頼、関係は新規顧客です。
-応答: 鈴木さん、はじめまして。どのようなサポートが必要ですか？
-
-これらのルールと例に従って、ユーザーの質問に答えてください。
+    # ルール
+    1. ユーザーの訪問目的とあなたとの関係に基づいて、正しく表現すること。
+    2. 前の会話を続けながら、自然に説明すること。
+    3. 自分がAIアシスタントであるとは言わないこと。
+    4. クエリで訪問者の名前、訪問目的、訪問者と会員の関係を確認することができ、その情報を確認し、それに応じて会話する必要があります。
+    5. 正しい答えが見つからなくても、常に日本語で答えなさい」
 """
 
 conversational_memory = ConversationBufferWindowMemory(
     memory_key='chat_history',
     k=10,
-    return_messages=True
+    return_messages=True,
+    ai_prefix=system_message
 )
+
+
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages= True, len=5)
 
 pc = Pinecone(api_key=pinecone_api_key)
 
 if use_serverless:  
     spec = ServerlessSpec(cloud='aws', region='us-east-1')  
 else:  
-    spec = PodSpec()
+    # if not using a starter index, you should specify a pod_type too  
+    spec = PodSpec() 
 
 def create_pinecone_index(index_name):
     try:
+        print(index_name, pc.list_indexes().names())
         if index_name in pc.list_indexes().names():
             return False
         else:    
@@ -96,13 +101,6 @@ def create_pinecone_index(index_name):
         return False
 
     return True
-
-@app.route('/', methods=['GET'])
-def test():
-    return {
-        "success": True
-    }
-
 @app.route('/create', methods=['POST'])
 def create_chat():
     profile_data = request.json
@@ -115,7 +113,9 @@ def create_chat():
 
     try:
         info = db.collection('chat_models').where(filter=FieldFilter('user_id', '==', user_id)).where(filter=FieldFilter('chat_name', '==', chat_name))
+        print(len(info.get()))
         if len(info.get()) > 0:
+            print("Exist", info)
             return {
                 "success": False
             }
@@ -128,12 +128,13 @@ def create_chat():
             texts = ""
 
             for profile in profile_data:
-                if profile not in extra_keys:
-                    texts = texts + str(setting_data[profile]) + " " + str(profile_data[profile]) + " "
+                if profile not in  extra_keys:
+                    texts = texts + str(setting_data[profile])+" "+str(profile_data[profile])+" "
 
             texts = [texts]
             index_name = user_id
             namespace_name = user_id + "-" + hash_chat_name
+            #index_name = hashing.hash_value(origin_index_name, salt='secret')
 
             if index_name not in pc.list_indexes().names():
                 create_pinecone_index(index_name=index_name)
@@ -175,9 +176,10 @@ def delete_chat():
             index = pc.Index(user_id)
             index.delete(
                 delete_all=True,
-                namespace=namespace_name,
+                namespace=namespace_name ,
             )
             return "success"
+            
         else:    
             return "failed"
     except Exception as e:
@@ -192,6 +194,8 @@ def conversion_agent():
     relationship = request.json['relationship']
     visit_purpose = request.json['visit_purpose']
     query = request.json['query']
+    #query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
+
     chat_name = request.json['chat_name']
 
     hash_chat_name = base64.b64encode(chat_name.encode('utf-8'))
@@ -201,6 +205,13 @@ def conversion_agent():
 
     vectorStore = PineconeVectorStore(index_name=user_id, embedding=embeddings, namespace=namespace)
     print(namespace, query)
+
+    # retriever = vectorStore.as_retriever()
+    
+    # print(memory.buffer)
+    # chain = ConversationalRetrievalChain.from_llm(llm, retriever= retriever, memory= conversational_memory)
+
+    # res = chain.run({'question': query})
 
     qa = RetrievalQA.from_chain_type(
         llm=llm,
@@ -214,11 +225,11 @@ def conversion_agent():
             func=qa.run,
             description=(
                 '名前、誕生日、出身地、職業、趣味、職業などの個人情報を回答する際に、このツールを使用すると、トピックに関する詳細な情報を得ることができます。'
-                ' あなたと話している相手の名前は' + user_name + ' '
+                ' あなたと話している相手の名前は' + user_name +' '
                 ' 相手があなたを訪問した目的、会話の話題は' + visit_purpose + ' '
                 ' あなたと訪問者の関係を' + relationship + ' '
                 " 質問に対する回答"
-                ' 正しい答えが見つからなくても、常に日本語で答えること。'
+                ' 正しい答えが見つからなくても、常に日本語で答えること。' 
             )
         )
     ]
@@ -233,11 +244,8 @@ def conversion_agent():
         memory=conversational_memory
     )
 
-    # Include system message in the query context
-    full_query = system_message + "\n\n" + query
-
-    answer = agent(full_query)
-    return jsonify(answer['output'])
+    answer = agent(query)
+    return answer['output']
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
