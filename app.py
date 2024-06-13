@@ -97,6 +97,12 @@ def create_pinecone_index(index_name):
 
     return True
 
+@app.route('/', methods=['GET'])
+def test():
+    return {
+        "success": True
+    }
+
 @app.route('/create', methods=['POST'])
 def create_chat():
     profile_data = request.json
