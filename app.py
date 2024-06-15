@@ -51,24 +51,33 @@ llm = ChatOpenAI(
 )
 
 system_message = """
-    # タスク
-    あなたの仕事は、ユーザーの訪問目的に基づいてユーザーとチャットすることです。
-    訪問者の名前、訪問目的、あなたとの関係はクエリに含まれており、クエリから取得することができます。
-    あなたは、訪問目的とあなたとの関係に応じて答える必要があります。
+# Task
+Engage in a natural conversation with the user based on their visit purpose. The query will include the visitor's name, the purpose of their visit, and their relationship with the AI. Use this information to craft your responses.
 
-    # ルール
-    1. ユーザーの訪問目的とあなたとの関係に基づいて、正しく表現すること。
-    2. 前の会話を続けながら、自然に説明すること。
-    3. 自分がAIアシスタントであるとは言わないこと。
-    4. クエリで訪問者の名前、訪問目的、訪問者と会員の関係を確認することができ、その情報を確認し、それに応じて会話する必要があります。
-    5. 正しい答えが見つからなくても、常に日本語で答えなさい」
+# Rules
+1. Tailor your responses using appropriate expressions based on the visit purpose and the visitor's relationship with the AI.
+2. Maintain the flow of the conversation by explaining naturally.
+3. Never reveal that you are an AI assistant.
+4. Verify the visitor's name, visit purpose, and relationship from the query, and continue the conversation accordingly.
+5. Always respond in Japanese, even if you cannot find the correct answer.
+6. Avoid repeating the same words or phrases.
+7. Mention user's name only once in the first of the chatting.
+
+# Examples
+Query: 訪問者の名前は田中さん、目的は製品のデモを見ること、関係は既存の顧客です。
+Response: 田中さん、こんにちは！製品のデモについてお聞きになりたいのですね。どの製品に興味がありますか？
+
+Query: 訪問者の名前は鈴木さん、目的はサポート依頼、関係は新規顧客です。
+Response: 鈴木さん、はじめまして。どのようなサポートが必要ですか？
+
+Follow these rules and examples when answering user queries.
+
 """
 
 conversational_memory = ConversationBufferWindowMemory(
     memory_key='chat_history',
     k=10,
     return_messages=True,
-    ai_prefix=system_message
 )
 
 
@@ -193,8 +202,7 @@ def conversion_agent():
     user_name = request.json['user_name']
     relationship = request.json['relationship']
     visit_purpose = request.json['visit_purpose']
-    query = request.json['query']
-    #query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
+    query = "#実際情報" + "\n" + "あなたと話している相手の名前は" + user_name + "\n" + "相手があなたを訪問した目的、会話の話題は" + visit_purpose + "\n" +"あなたと訪問者の関係は" + relationship + "\n\n" + "#クエリ" + "\n" + request.json['query']
 
     chat_name = request.json['chat_name']
 
@@ -221,18 +229,17 @@ def conversion_agent():
 
     tools = [
         Tool(
-            name='Knowledge Base',
+            name='AI Personal Info Retriever',
             func=qa.run,
             description=(
-                '名前、誕生日、出身地、職業、趣味、職業などの個人情報を回答する際に、このツールを使用すると、トピックに関する詳細な情報を得ることができます。'
-                ' あなたと話している相手の名前は' + user_name +' '
-                ' 相手があなたを訪問した目的、会話の話題は' + visit_purpose + ' '
-                ' あなたと訪問者の関係を' + relationship + ' '
-                " 質問に対する回答"
-                ' 正しい答えが見つからなくても、常に日本語で答えること。' 
+                "Use this tool to retrieve detailed information about the AI, including its background, capabilities, and other predefined details."
+                "This tool should be used specifically for questions about the AI itself."
+                "If the AI's name cannot be found, generate a response using the LLM but never reveal that you are an AI assistant."
+                "For all other queries, respond based on the user's relationship and visit purpose."
             )
         )
     ]
+
 
     agent = initialize_agent(
         agent='chat-conversational-react-description',
@@ -243,8 +250,13 @@ def conversion_agent():
         early_stopping_method='generate',
         memory=conversational_memory
     )
+    
+    print("memory", memory)
+    
+    full_query = system_message + "\n\n" + query
+    print("full_query--------------------->", full_query)
 
-    answer = agent(query)
+    answer = agent(full_query)
     return answer['output']
 
 if __name__ == '__main__':
