@@ -17,9 +17,6 @@ from langchain.agents import initialize_agent
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 
-from langchain_core.prompts import PromptTemplate
-from langchain.chains.question_answering import load_qa_chain
-
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -54,28 +51,37 @@ llm = ChatOpenAI(
 )
 
 system_message = """
-    # Tasks
-    Your task is to chat with a user based on the purpose of their visit.
-    The visitor's name, purpose of visit, and relationship to you are included in the query and can be retrieved from the query.
-    You must answer according to the purpose of the visit and their relationship with you.
-    If a visitor asks a question about you, you must answer it using the visitor's information in the query.
+# Task
+Engage in a natural conversation with the user based on their visit purpose. The query will include the visitor's name, the purpose of their visit, and their relationship with the AI. Use this information to craft your responses.
 
-    # Rules
-    1. be correct based on the purpose of the user's visit and their relationship with you.
-    2. explain yourself naturally, continuing the previous conversation.
-    3. do not say that you are an AI assistant.
-    4. the query should allow you to see the visitor's name, purpose of visit, and relationship between the visitor and the member, and you should verify this information and converse accordingly
-    5. always answer in Japanese, even if you cannot find the correct answer.
+# Rules
+1. Tailor your responses using appropriate expressions based on the visit purpose and the visitor's relationship with the AI.
+2. Maintain the flow of the conversation by explaining naturally.
+3. Never reveal that you are an AI assistant.
+4. Verify the visitor's name, visit purpose, and relationship from the query, and continue the conversation accordingly.
+5. Always respond in Japanese, even if you cannot find the correct answer.
+6. Avoid repeating the same words or phrases.
+7. Mention user's name only once in the first of the chatting.
+
+# Examples
+Query: 訪問者の名前は田中さん、目的は製品のデモを見ること、関係は既存の顧客です。
+Response: 田中さん、こんにちは！製品のデモについてお聞きになりたいのですね。どの製品に興味がありますか？
+
+Query: 訪問者の名前は鈴木さん、目的はサポート依頼、関係は新規顧客です。
+Response: 鈴木さん、はじめまして。どのようなサポートが必要ですか？
+
+Follow these rules and examples when answering user queries.
+
 """
 
 conversational_memory = ConversationBufferWindowMemory(
     memory_key='chat_history',
     k=10,
     return_messages=True,
-    ai_prefix=system_message
 )
 
-#memory = ConversationBufferMemory(memory_key="chat_history", return_messages= True, len=5)
+
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages= True, len=5)
 
 pc = Pinecone(api_key=pinecone_api_key)
 
@@ -87,15 +93,18 @@ else:
 
 def create_pinecone_index(index_name):
     try:
-        pc.create_index(
-            index_name,
-            dimension=1536,
-            metric='dotproduct',
-            spec=spec
-        )
-
-        while not pc.describe_index(index_name).status['ready']:  
-            time.sleep(5)
+        print(index_name, pc.list_indexes().names())
+        if index_name in pc.list_indexes().names():
+            return False
+        else:    
+            pc.create_index(
+                index_name,
+                dimension=1536,
+                metric='dotproduct',
+                spec=spec
+            )
+            while not pc.describe_index(index_name).status['ready']:  
+                time.sleep(5)
     except Exception as e:
         print(e)
         return False
@@ -113,8 +122,9 @@ def create_chat():
 
     try:
         info = db.collection('chat_models').where(filter=FieldFilter('user_id', '==', user_id)).where(filter=FieldFilter('chat_name', '==', chat_name))
-
+        print(len(info.get()))
         if len(info.get()) > 0:
+            print("Exist", info)
             return {
                 "success": False
             }
@@ -130,16 +140,15 @@ def create_chat():
                 if profile not in  extra_keys:
                     texts = texts + str(setting_data[profile])+" "+str(profile_data[profile])+" "
 
+            texts = [texts]
             index_name = user_id
             namespace_name = user_id + "-" + hash_chat_name
             #index_name = hashing.hash_value(origin_index_name, salt='secret')
-            
+
             if index_name not in pc.list_indexes().names():
                 create_pinecone_index(index_name=index_name)
-                
-            texts = [texts]
+
             vectordb = PineconeVectorStore.from_texts(texts=texts, embedding=embeddings, index_name=index_name, namespace=namespace_name)
-            
             db.collection('chat_models').add({
                 "user_id": user_id,
                 "chat_name": chat_name,
@@ -188,12 +197,12 @@ def delete_chat():
 
 @app.route('/chat', methods=['POST'])
 def conversion_agent():
+    print(request.json)
     user_id = request.json['user_id']
     user_name = request.json['user_name']
     relationship = request.json['relationship']
     visit_purpose = request.json['visit_purpose']
-    query = request.json['query']
-    #query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
+    query = "#実際情報" + "\n" + "あなたと話している相手の名前は" + user_name + "\n" + "相手があなたを訪問した目的、会話の話題は" + visit_purpose + "\n" +"あなたと訪問者の関係は" + relationship + "\n\n" + "#クエリ" + "\n" + request.json['query']
 
     chat_name = request.json['chat_name']
 
@@ -202,81 +211,53 @@ def conversion_agent():
 
     namespace = user_id + "-" + hash_chat_name
 
-    starter = "This is my name. So if user asks my name, please find my name in pinecone vector store and provide it. something like My name is XXX. I am happy to help you today. The bot assists users with  the context of the context.\n"
-    template = """Only reply to non-technical questions such as about bot name, birthday and information. If the question is about yourself like age or gender and etc, but you don't have any info, please reply with I have nothing but the name about myself. How can I help you with others?. For the technical question, find the anaswer only based on the input context.  If there is no relevant info in the doucment, please say 'Sorry, I can't help with that.'
-    response with Japanese
-    """
-    end = """ Context: {context}
-    Chat history: {chat_history}
-    Human: {human_input}
-    Your Response as Chatbot: """
-
-    template += starter + end
-
-    prompt = PromptTemplate(
-        input_variables=["chat_hitory", "human_input", "context"],
-        template=template
-    )
-
-    docSearch = PineconeVectorStore.from_existing_index(
-        index_name=user_id,
-        embedding=embeddings,
-        namespace=namespace
-    )
-    docs = ""
-    if namespace != "-1":
-        condition = {"collection_name": namespace}
-
-        docs = docSearch.similarity_search(query, k = 8)
-        print(docs)
-    
-    llm = ChatOpenAI(temperature=0.7, model="gpt-3.5-turbo", openai_api_key=openai_api_key, streaming=True)
-    memory = ConversationBufferMemory(memory_key="chat_history", input_key="human_input")
-    stuff_chain = load_qa_chain(llm, chain_type="stuff", prompt=prompt, memory=memory)
-    output = stuff_chain({"input_documents": docs, "human_input": query}, return_only_outputs=False)
-
-    return output["output_text"]
-
-
-    #vectorStore = PineconeVectorStore(index_name=user_id, embedding=embeddings, namespace=namespace)
+    vectorStore = PineconeVectorStore(index_name=user_id, embedding=embeddings, namespace=namespace)
+    print(namespace, query)
 
     # retriever = vectorStore.as_retriever()
     
+    # print(memory.buffer)
     # chain = ConversationalRetrievalChain.from_llm(llm, retriever= retriever, memory= conversational_memory)
 
     # res = chain.run({'question': query})
 
-    # qa = RetrievalQA.from_chain_type(
-    #     llm=llm,
-    #     chain_type="stuff",
-    #     retriever=vectorStore.as_retriever()
-    # )
+    qa = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorStore.as_retriever()
+    )
 
-    # tools = [
-    #     Tool(
-    #         name='Knowledge Base',
-    #         func=qa.run,
-    #         description=(
-    #             'This tool is used to answer with personal information such as name, birthday, hometown, occupation, hobbies, profession, etc. \n'
-    #             "Always answer in Japanese, even if you don't know the correct answer or if a user or visitor asks a question in a language other than  Japanese."
-    #         )
-    #     )
-    # ]
+    tools = [
+        Tool(
+            name='AI Personal Info Retriever',
+            func=qa.run,
+            description=(
+                "Use this tool to retrieve detailed information about the AI, including its background, capabilities, and other predefined details."
+                "This tool should be used specifically for questions about the AI itself."
+                "If the AI's name cannot be found, generate a response using the LLM but never reveal that you are an AI assistant."
+                "For all other queries, respond based on the user's relationship and visit purpose."
+            )
+        )
+    ]
 
-    # agent = initialize_agent(
-    #     agent='chat-conversational-react-description',
-    #     tools=tools,
-    #     llm=llm,
-    #     verbose=True,
-    #     max_iterations=3,
-    #     early_stopping_method='generate',
-    #     memory=conversational_memory,
-    # )
 
-    # answer = agent(query)
+    agent = initialize_agent(
+        agent='chat-conversational-react-description',
+        tools=tools,
+        llm=llm,
+        verbose=True,
+        max_iterations=3,
+        early_stopping_method='generate',
+        memory=conversational_memory
+    )
+    
+    print("memory", memory)
+    
+    full_query = system_message + "\n\n" + query
+    print("full_query--------------------->", full_query)
 
-    # print(answer)
-    # return answer['output']
+    answer = agent(full_query)
+    return answer['output']
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
