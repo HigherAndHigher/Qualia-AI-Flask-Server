@@ -4,7 +4,6 @@ import json
 import time
 import base64
 from pinecone import Pinecone, ServerlessSpec, PodSpec  
-#from langchain.vectorstores import Pinecone as PineconeVectorStore
 from langchain_pinecone import PineconeVectorStore 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -75,8 +74,6 @@ conversational_memory = ConversationBufferWindowMemory(
     ai_prefix=system_message
 )
 
-#memory = ConversationBufferMemory(memory_key="chat_history", return_messages= True, len=5)
-
 pc = Pinecone(api_key=pinecone_api_key)
 
 if use_serverless:  
@@ -132,7 +129,6 @@ def create_chat():
 
             index_name = user_id
             namespace_name = user_id + "-" + hash_chat_name
-            #index_name = hashing.hash_value(origin_index_name, salt='secret')
             
             if index_name not in pc.list_indexes().names():
                 create_pinecone_index(index_name=index_name)
@@ -192,8 +188,8 @@ def conversion_agent():
     user_name = request.json['user_name']
     relationship = request.json['relationship']
     visit_purpose = request.json['visit_purpose']
-    query = request.json['query']
-    #query = query + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
+    question = request.json['query']
+    query = question + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
 
     chat_name = request.json['chat_name']
 
@@ -236,47 +232,6 @@ def conversion_agent():
     output = stuff_chain({"input_documents": docs, "human_input": query}, return_only_outputs=False)
 
     return output["output_text"]
-
-
-    #vectorStore = PineconeVectorStore(index_name=user_id, embedding=embeddings, namespace=namespace)
-
-    # retriever = vectorStore.as_retriever()
-    
-    # chain = ConversationalRetrievalChain.from_llm(llm, retriever= retriever, memory= conversational_memory)
-
-    # res = chain.run({'question': query})
-
-    # qa = RetrievalQA.from_chain_type(
-    #     llm=llm,
-    #     chain_type="stuff",
-    #     retriever=vectorStore.as_retriever()
-    # )
-
-    # tools = [
-    #     Tool(
-    #         name='Knowledge Base',
-    #         func=qa.run,
-    #         description=(
-    #             'This tool is used to answer with personal information such as name, birthday, hometown, occupation, hobbies, profession, etc. \n'
-    #             "Always answer in Japanese, even if you don't know the correct answer or if a user or visitor asks a question in a language other than  Japanese."
-    #         )
-    #     )
-    # ]
-
-    # agent = initialize_agent(
-    #     agent='chat-conversational-react-description',
-    #     tools=tools,
-    #     llm=llm,
-    #     verbose=True,
-    #     max_iterations=3,
-    #     early_stopping_method='generate',
-    #     memory=conversational_memory,
-    # )
-
-    # answer = agent(query)
-
-    # print(answer)
-    # return answer['output']
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
