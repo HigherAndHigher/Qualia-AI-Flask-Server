@@ -240,4 +240,4 @@ def generate_response(ai_friend_data, user_data, user_message, chat_history):
     return response
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
