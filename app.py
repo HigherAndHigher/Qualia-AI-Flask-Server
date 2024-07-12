@@ -228,7 +228,7 @@ def generate_response(ai_friend_data, user_data, user_message, chat_history):
     prompt += f"訪問目的: {user_data['visit_purpose']}\n"
     prompt += f"チャット履歴:\n{chat_history_str}\n"
     prompt += f"ユーザーのメッセージ: {user_message}\n"
-    prompt += "AIの情報とチャット履歴に基づいて自然に応答してください。自分がAIであることを言わないでください。\n"
+    prompt += "AIの情報とチャット履歴に基づいて自然に応答してください。自分がAIであることを言わないでください。自分が人工知能であることを言わないでください。\n"
     prompt += "自然に応答してください。応答に「AIのメッセージ」や「AIの応答」、AI自分の名前などの前置きを入れないでください。応答にユーザーのメッセージも入れないでください。また、応答に自身の名前や「:」を入れないでください。\n"
     prompt += "自然に応答してください。応答に「AIのメッセージ」や「AIの応答」、自身の名前、「bot:」や「:」などの前置きを入れないでください。\n"
 
