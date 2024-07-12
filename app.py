@@ -1,237 +1,243 @@
 import os
-import time
-import json
-import time
-import base64
-from pinecone import Pinecone, ServerlessSpec, PodSpec  
-from langchain_pinecone import PineconeVectorStore 
 from flask import Flask, request, jsonify
+from langchain.llms import OpenAI
 from flask_cors import CORS
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.chat_models import ChatOpenAI
-from langchain.chains.conversation.memory import ConversationBufferWindowMemory
-from langchain.chains import RetrievalQA
-from langchain.agents import Tool
-from langchain.agents import initialize_agent
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
-
-from langchain_core.prompts import PromptTemplate
-from langchain.chains.question_answering import load_qa_chain
-
+from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, firestore
-from google.cloud.firestore_v1.base_query import FieldFilter
+import uuid
 
 app = Flask(__name__)
 CORS(app)
 
-#Configure FireStore
+# Firestore DB初期化
 cred = credentials.Certificate('./key.json')
 firebase_admin.initialize_app(cred)
-
 db = firestore.client()
 
-#env variables
-pinecone_api_key = os.environ.get('PINECONE_API_KEY')
+#　環境変数
 openai_api_key = os.environ.get('OPENAI_API_KEY')
 
-#configure pinecone and langchain
-use_serverless = True  
-
-model_name = 'text-embedding-ada-002'  
-
-embeddings = OpenAIEmbeddings(  
-    model=model_name,  
-    openai_api_key=openai_api_key  
-)
-
-llm = ChatOpenAI(
-    openai_api_key = os.environ['OPENAI_API_KEY'],
-    model_name='gpt-3.5-turbo',
-    temperature=0.0
-)
-
-system_message = """
-    # Tasks
-    Your task is to chat with a user based on the purpose of their visit.
-    The visitor's name, purpose of visit, and relationship to you are included in the query and can be retrieved from the query.
-    You must answer according to the purpose of the visit and their relationship with you.
-    If a visitor asks a question about you, you must answer it using the visitor's information in the query.
-
-    # Rules
-    1. be correct based on the purpose of the user's visit and their relationship with you.
-    2. explain yourself naturally, continuing the previous conversation.
-    3. do not say that you are an AI assistant.
-    4. the query should allow you to see the visitor's name, purpose of visit, and relationship between the visitor and the member, and you should verify this information and converse accordingly
-    5. always answer in Japanese, even if you cannot find the correct answer.
-"""
-
-conversational_memory = ConversationBufferWindowMemory(
-    memory_key='chat_history',
-    k=10,
-    return_messages=True,
-    ai_prefix=system_message
-)
-
-pc = Pinecone(api_key=pinecone_api_key)
-
-if use_serverless:  
-    spec = ServerlessSpec(cloud='aws', region='us-east-1')  
-else:  
-    # if not using a starter index, you should specify a pod_type too  
-    spec = PodSpec() 
-
-def create_pinecone_index(index_name):
-    try:
-        pc.create_index(
-            index_name,
-            dimension=1536,
-            metric='dotproduct',
-            spec=spec
-        )
-
-        while not pc.describe_index(index_name).status['ready']:  
-            time.sleep(5)
-    except Exception as e:
-        print(e)
-        return False
-
-    return True
 @app.route('/create', methods=['POST'])
-def create_chat():
-    profile_data = request.json
-    user_id = profile_data['user_id']
-    chat_name = profile_data['model_name']
-    avatar_url = profile_data['avatar_url']
-
-    hash_chat_name = base64.b64encode(chat_name.encode('utf-8'))
-    hash_chat_name = hash_chat_name.decode('ascii')
-
-    try:
-        info = db.collection('chat_models').where(filter=FieldFilter('user_id', '==', user_id)).where(filter=FieldFilter('chat_name', '==', chat_name))
-
-        if len(info.get()) > 0:
-            return {
-                "success": False
-            }
-        else:
-            extra_keys = ['user_id', 'entry_name', 'doc_id', 'selected_model', 'avatar_url', 'model_name']
-
-            with open('setting.json', 'r', encoding='utf8') as f:
-                setting_data = json.load(f)
-
-            texts = ""
-
-            for profile in profile_data:
-                if profile not in  extra_keys:
-                    texts = texts + str(setting_data[profile])+" "+str(profile_data[profile])+" "
-
-            index_name = user_id
-            namespace_name = user_id + "-" + hash_chat_name
-            
-            if index_name not in pc.list_indexes().names():
-                create_pinecone_index(index_name=index_name)
-                
-            texts = [texts]
-            vectordb = PineconeVectorStore.from_texts(texts=texts, embedding=embeddings, index_name=index_name, namespace=namespace_name)
-            
-            db.collection('chat_models').add({
-                "user_id": user_id,
-                "chat_name": chat_name,
-                "index_name": index_name,
-                "namespace_name": namespace_name,
-                "avatar_url": avatar_url
-            })
-
-    except Exception as e:
-        print("error", e)
-        return {
-            "success": False
-        }
-
-    return {
-        "success": True,
-        "index_name": index_name,
-        "namespace_name": namespace_name
+def create_ai_friend():
+    data = request.json
+    friend_id = str(uuid.uuid4())
+    ai_friend_data = {
+      'id': friend_id,
+      'model_name': data.get('model_name'),
+      'entry_name': data.get('entry_name'),
+      'avatar_url': data.get('avatar_url'),
+      'name': data.get('name'),
+      'birthday': data.get('birthday'),
+      'hometown': data.get('hometown'),
+      'gender': data.get('gender'),
+      'bloodtype': data.get('blood_type'),
+      'family_name': data.get('family_names'),
+      'occupation': data.get('occupation'),
+      'hobby': data.get('hobbies'),
+      'special_skills': data.get('special_skills'),
+      'self_introduction': data.get('self_introduction'),
+      'first_person_pronoun': data.get('first_person_pronoun'),
+      'conversation_style': data.get('conversation_style'),
+      'conversation_starters': data.get('conversation_starters'),
+      'conversation_endings': data.get('conversation_endings'),
+      'intonation_and_volume': data.get('intonation_and_volume'),
+      'conversation_pacing': data.get('conversation_pacing'),
+      'fluency': data.get('fluency'),
+      'dialect': data.get('dialect'),
+      'languages_spoken': data.get('languages_spoken'),
+      'other_speaking_styles': data.get('other_speaking_styles'),
+      'favorite_animal': data.get('favorite_animal'),
+      'favorite_book': data.get('favorite_book'),
+      'favorite_movie': data.get('favorite_movie'),
+      'favorite_singer_or_talent': data.get('favorite_singer_or_talent'),
+      'favorite_song': data.get('favorite_song'),
+      'favorite_sport': data.get('favorite_sport'),
+      'favorite_game': data.get('favorite_game'),
+      'favorite_artwork_or_anime': data.get('favorite_artwork_or_anime'),
+      'favorite_color': data.get('favorite_color'),
+      'favorite_word': data.get('favorite_word'),
+      'favorite_season': data.get('favorite_season'),
+      'favorite_travel_destination': data.get('favorite_travel_destination'),
+      'solo_travel_or_group_travel': data.get('solo_travel_or_group_travel'),
+      'favorite_and_disliked_foods_and_drinks': data.get('favorite_and_disliked_foods_and_drinks'),
+      'spicy_or_sweet_food_preference': data.get('spicy_or_sweet_food_preference'),
+      'cooking_skills_and_signature_dishes': data.get('cooking_skills_and_signature_dishes'),
+      'favorite_possessions_or_gadgets': data.get('favorite_possessions_or_gadgets'),
+      'collected_items': data.get('collected_items'),
+      'most_expensive_purchase': data.get('most_expensive_purchase'),
+      'favorite_purchase': data.get('favorite_purchase'),
+      'stress_relief_methods': data.get('stress_relief_methods'),
+      'definition_of_family': data.get('definition_of_family'),
+      'favorite_place_at_home': data.get('favorite_place_at_home'),
+      'favorite_event': data.get('favorite_event'),
+      'weekend_activities': data.get('weekend_activities'),
+      'morning_or_night_person': data.get('morning_or_night_person'),
+      'indoor_or_outdoor_person': data.get('indoor_or_outdoor_person'),
+      'active_or_laidback_person': data.get('active_or_laidback_person'),
+      'optimist_or_pessimist': data.get('optimist_or_pessimist'),
+      'planning_or_spontaneous_person': data.get('planning_or_spontaneous_person'),
+      'recent_obsession': data.get('recent_obsession'),
+      'recent_happiness': data.get('recent_happiness'),
+      'recent_sadness': data.get('recent_sadness'),
+      'recent_anger': data.get('recent_anger'),
+      'recent_emotional_moment': data.get('recent_emotional_moment'),
+      'recent_learning': data.get('recent_learning'),
+      'recent_regret': data.get('recent_regret'),
+      'recent_reflection': data.get('recent_reflection'),
+      'recent_gratitude': data.get('recent_gratitude'),
+      'recent_appreciation_received': data.get('recent_appreciation_received'),
+      'one_word_description': data.get('one_word_description'),
+      'animal_representation': data.get('animal_representation'),
+      'childhood_personality': data.get('childhood_personality'),
+      'dream_job_as_a_child': data.get('dream_job_as_a_child'),
+      'moments_of_happiness': data.get('moments_of_happiness'),
+      'point_of_pride': data.get('point_of_pride'),
+      'habit_to_change': data.get('habit_to_change'),
+      'memorable_feedback': data.get('memorable_feedback'),
+      'life_changing_event': data.get('life_changing_event'),
+      'future_challenges': data.get('future_challenges'),
+      'anger_traits': data.get('anger_traits'),
+      'sadness_traits': data.get('sadness_traits'),
+      'lying_traits': data.get('lying_traits'),
+      'struggling_traits': data.get('struggling_traits'),
+      'happiness_traits': data.get('happiness_traits'),
+      'laughing_style': data.get('laughing_style'),
+      'crying_style': data.get('crying_style'),
+      'joke_telling_frequency': data.get('joke_telling_frequency'),
+      'abstract_expression_preference': data.get('abstract_expression_preference'),
+      'personal_motto': data.get('personal_motto'),
+      'earliest_memory': data.get('earliest_memory'),
+      'childhood_dream': data.get('childhood_dream'),
+      'first_love': data.get('first_love'),
+      'person_who_understands_you_best': data.get('person_who_understands_you_best'),
+      'comforting_place': data.get('comforting_place'),
+      'favorite_physical_feature': data.get('favorite_physical_feature'),
+      'commonly_misunderstood_aspect': data.get('commonly_misunderstood_aspect'),
+      'overcome_difficulty': data.get('overcome_difficulty'),
+      'impactful_life_event': data.get('impactful_life_event'),
+      'valued_relationship': data.get('valued_relationship'),
+      'cherished_traditions': data.get('cherished_traditions'),
+      'important_lesson_to_share': data.get('important_lesson_to_share'),
+      'message_to_humanity': data.get('message_to_humanity'),
+      'desired_superpower': data.get('desired_superpower'),
+      'moment_to_relive': data.get('moment_to_relive'),
+      'advice_to_past_self': data.get('advice_to_past_self'),
+      'biggest_regret': data.get('biggest_regret'),
+      'final_words': data.get('final_words'),
+      'desired_legacy': data.get('desired_legacy'),
+      'ideal_reincarnation': data.get('ideal_reincarnation')
     }
 
+    db.collection('ai_friends').document(friend_id).set(ai_friend_data)
+    
+    return jsonify({'friend_id': friend_id})
+
 @app.route('/delete', methods=['POST'])
-def delete_chat():
+def delete_ai_friend():
+    friend_id = request.json.get('friend_id')
+    
+    doc_ref = db.collection('ai_friends').document(friend_id)
+    if doc_ref.get().exists:
+        doc_ref.delete()
+        return jsonify({'status': 'success'})
+    return jsonify({'status': 'not found'}), 404
+
+@app.route('/user_info', methods=['POST'])
+def user_info():
     data = request.json
-    chat_name = data['model_name']
-    user_id = data['user_id']
-
-    hash_chat_name = base64.b64encode(chat_name.encode('utf-8'))
-    hash_chat_name = hash_chat_name.decode('ascii')
-
-    namespace_name = user_id + '-' + hash_chat_name
-
-    try:
-        if user_id in pc.list_indexes().names():
-            index = pc.Index(user_id)
-            index.delete(
-                delete_all=True,
-                namespace=namespace_name ,
-            )
-            return "success"
-            
-        else:    
-            return "failed"
-    except Exception as e:
-        print(e)
-        return "failed"
+    
+    user_data = {
+        'name': data['user_name'],
+        'relationship': data['relationship'],
+        'visit_purpose': data['visit_purpose']
+    }
+    
+    friend_id = data['friend_id']
+    db.collection('ai_friends').document(friend_id).collection('user_sessions').document('current_user').set(user_data)
+    
+    return jsonify({'status': 'success'})
 
 @app.route('/chat', methods=['POST'])
-def conversion_agent():
-    user_id = request.json['user_id']
-    user_name = request.json['user_name']
-    relationship = request.json['relationship']
-    visit_purpose = request.json['visit_purpose']
-    question = request.json['query']
-    query = question + ". 私は " +user_name +  ". ボットとの関係:"+relationship+". 訪問目的:"+visit_purpose +". "+ ". 日本語で答えなければならない。"
-
-    chat_name = request.json['chat_name']
-
-    hash_chat_name = base64.b64encode(chat_name.encode('utf-8'))
-    hash_chat_name = hash_chat_name.decode('ascii')
-
-    namespace = user_id + "-" + hash_chat_name
-
-    starter = "This is my name. So if user asks my name, please find my name in pinecone vector store and provide it. something like My name is XXX. I am happy to help you today. The bot assists users with  the context of the context.\n"
-    template = """Only reply to non-technical questions such as about bot name, birthday and information. If the question is about yourself like age or gender and etc, but you don't have any info, please reply with I have nothing but the name about myself. How can I help you with others?. For the technical question, find the anaswer only based on the input context.  If there is no relevant info in the doucment, please say 'Sorry, I can't help with that.'
-    response with Japanese
-    """
-    end = """ Context: {context}
-    Chat history: {chat_history}
-    Human: {human_input}
-    Your Response as Chatbot: """
-
-    template += starter + end
-
-    prompt = PromptTemplate(
-        input_variables=["chat_hitory", "human_input", "context"],
-        template=template
-    )
-
-    docSearch = PineconeVectorStore.from_existing_index(
-        index_name=user_id,
-        embedding=embeddings,
-        namespace=namespace
-    )
-    docs = ""
-    if namespace != "-1":
-        condition = {"collection_name": namespace}
-
-        docs = docSearch.similarity_search(query, k = 8)
-        print(docs)
+def chat_with_ai_friend():
+    data = request.json
+    friend_id = data.get('friend_id')
+    user_message = data.get('message')
     
-    llm = ChatOpenAI(temperature=0.7, model="gpt-3.5-turbo", openai_api_key=openai_api_key, streaming=True)
-    memory = ConversationBufferMemory(memory_key="chat_history", input_key="human_input")
-    stuff_chain = load_qa_chain(llm, chain_type="stuff", prompt=prompt, memory=memory)
-    output = stuff_chain({"input_documents": docs, "human_input": query}, return_only_outputs=False)
+    doc_ref = db.collection('ai_friends').document(friend_id)
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        return jsonify({'status': 'not found'}), 404
+    
+    ai_friend_data = doc.to_dict()
+    
+    user_doc_ref = doc_ref.collection('user_sessions').document('current_user')
+    user_doc = user_doc_ref.get()
+    
+    if not user_doc.exists:
+        return jsonify({'status': 'user not found'}), 404
+    
+    user_data = user_doc.to_dict()
 
-    return output["output_text"]
+    # チャット履歴の取得
+    chat_history_ref = doc_ref.collection('chat_history').order_by('timestamp')
+    chat_history_docs = chat_history_ref.stream()
+    chat_history = [{'role': doc.to_dict()['role'], 'message': doc.to_dict()['message']} for doc in chat_history_docs]
+
+    # AIが友人の反応を生成
+    response = generate_response(ai_friend_data, user_data, user_message, chat_history)
+
+    # ユーザーメッセージとボットの応答をチャット履歴に保存
+    chat_ref = doc_ref.collection('chat_history').document()
+    chat_ref.set({
+        'role': 'user',
+        'message': user_message,
+        'timestamp': firestore.SERVER_TIMESTAMP
+    })
+    chat_ref = doc_ref.collection('chat_history').document()
+    chat_ref.set({
+        'role': 'bot',
+        'message': response,
+        'timestamp': firestore.SERVER_TIMESTAMP
+    })
+    
+    return jsonify({'response': response})
+
+@app.route('/delete_chat_history', methods=['POST'])
+def delete_chat_history():
+    friend_id = request.json.get('friend_id')
+    
+    doc_ref = db.collection('ai_friends').document(friend_id)
+    chat_history_ref = doc_ref.collection('chat_history')
+    chat_history_docs = chat_history_ref.stream()
+    
+    for doc in chat_history_docs:
+        doc.reference.delete()
+    
+    return jsonify({'status': 'chat history deleted'})
+
+def generate_response(ai_friend_data, user_data, user_message, chat_history):
+    openai_api = OpenAI(api_key = openai_api_key)
+    
+    chat_history_str = '\n'.join([f"{entry['role']}: {entry['message']}" for entry in chat_history])
+    prompt = f"あなたは{ai_friend_data['name']}です。\n"
+    prompt += f"あなたの情報: {ai_friend_data}\n"
+    prompt += f"ユーザーの名前: {user_data['name']}\n"
+    prompt += f"ユーザーとの関係: {user_data['relationship']}\n"
+    prompt += f"訪問目的: {user_data['visit_purpose']}\n"
+    prompt += f"チャット履歴:\n{chat_history_str}\n"
+    prompt += f"ユーザーのメッセージ: {user_message}\n"
+    prompt += "AIの情報とチャット履歴に基づいて自然に応答してください。自分がAIであることを言わないでください。\n"
+    prompt += "自然に応答してください。応答に「AIのメッセージ」や「AIの応答」、AI自分の名前などの前置きを入れないでください。応答にユーザーのメッセージも入れないでください。\n"
+
+
+    response = openai_api(prompt, max_tokens=150)
+    # レスポンスに不要な接頭辞が含まれないようにする。
+    response = response.replace('bot: ', '')
+    response = response.replace('AIのメッセージ: ', '')
+    
+    return response
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True)
