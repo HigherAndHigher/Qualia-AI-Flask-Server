@@ -232,7 +232,7 @@ def generate_response(ai_friend_data, user_data, user_message, chat_history):
     prompt += "自然に応答してください。応答に「AIのメッセージ」や「AIの応答」、AI自分の名前などの前置きを入れないでください。応答にユーザーのメッセージも入れないでください。また、応答に自身の名前や「:」を入れないでください。\n"
     prompt += "自然に応答してください。応答に「AIのメッセージ」や「AIの応答」、自身の名前、「bot:」や「:」などの前置きを入れないでください。短くて簡潔な応答をしてください。\n"
 
-    response = openai_api(prompt, max_tokens=100)
+    response = openai_api(prompt, max_tokens=200)
     # レスポンスに不要な接頭辞が含まれないようにする。
     if(response.startswith('AIのメッセージ') or response.startswith('AIの応答') or response.startswith('AI自分の名前') or response.startswith(':')):
         response = response[1:]
